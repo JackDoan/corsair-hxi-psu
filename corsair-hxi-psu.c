@@ -112,8 +112,7 @@ static int send_usb_cmd(struct hxi_device *hxi, u8 command, u8 b1, u8 b2)
         return 0;
 }
 
-static int hxi_raw_event(struct hid_device *hdev,
-                         struct hid_report *report, u8 *data, int size)
+static int hxi_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data, int size)
 {
         struct hxi_device *hxi = hid_get_drvdata(hdev);
 
@@ -187,8 +186,7 @@ static int decode_corsair_float(u16 input)
  * measurements from the 12V/5V/3.3V busses. Other sensors that have standard
  * PMBUS commands are "unswitched"
  */
-static int get_electric_data(struct hxi_device *hxi, enum hxi_sensor_id sensor,
-                             enum hxi_sensor_cmd sig)
+static int get_data(struct hxi_device *hxi, enum hxi_sensor_id sensor, enum hxi_sensor_cmd sig)
 {
         int ret;
         mutex_lock(&hxi->mutex);
@@ -202,7 +200,7 @@ static int get_electric_data(struct hxi_device *hxi, enum hxi_sensor_id sensor,
                 ret = 0;
                 break;
         default:
-                ret = -1;
+                ret = -EOPNOTSUPP;
                 break;
         }
         if (ret) {
@@ -263,8 +261,7 @@ static int hxi_read_string(struct device *dev, enum hwmon_sensor_types type,
         return ret;
 }
 
-static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
-                    u32 attr, int channel, long *val)
+static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int chan, long *val)
 {
         struct hxi_device *hxi = dev_get_drvdata(dev);
         int ret;
@@ -273,7 +270,7 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
         case hwmon_temp:
                 switch (attr) {
                 case hwmon_temp_input:
-                        ret = get_temperature(hxi, channel);
+                        ret = get_temperature(hxi, chan);
                         if (ret < 0) {
                                 return ret;
                         }
@@ -286,9 +283,7 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
         case hwmon_in:
                 switch (attr) {
                 case hwmon_in_input:
-                        ret = get_electric_data(hxi,
-                                hxi->rails[channel].sensor,
-                                hxi->rails[channel].volt_cmd);
+                        ret = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].volt_cmd);
                         if (ret < 0) {
                                 return ret;
                         }
@@ -301,9 +296,7 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
         case hwmon_curr:
                 switch (attr) {
                 case hwmon_curr_input:
-                        ret = get_electric_data(hxi,
-                                hxi->rails[channel].sensor,
-                                hxi->rails[channel].amp_cmd);
+                        ret = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].amp_cmd);
                         if (ret < 0) {
                                 return ret;
                         }
@@ -316,9 +309,7 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
         case hwmon_power:
                 switch (attr) {
                 case hwmon_power_input:
-                        ret = get_electric_data(hxi,
-                                hxi->rails[channel].sensor,
-                                hxi->rails[channel].power_cmd);
+                        ret = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].power_cmd);
                         if (ret < 0) {
                                 return ret;
                         }
@@ -337,7 +328,7 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
 }
 
 static int hxi_write(struct device *dev, enum hwmon_sensor_types type,
-                     u32 attr, int channel, long val)
+        u32 attr, int channel, long val)
 {
         return -EOPNOTSUPP;
 }
@@ -408,6 +399,7 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
                 hxi->rails[i].amp_cmd = SIG_AMPS;
                 hxi->rails[i].power_cmd = SIG_WATTS;
         }
+
         hxi->rails[0].sensor = SENSOR_12V;
         hxi->rails[1].sensor = SENSOR_5V;
         hxi->rails[2].sensor = SENSOR_3V;
@@ -435,7 +427,6 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
                 goto out_hw_stop;
         }
 
-
         hxi->hdev = hdev;
         hid_set_drvdata(hdev, hxi);
         mutex_init(&hxi->mutex);
@@ -450,7 +441,8 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
                 goto out_hw_close;
         }
 
-        return 0;
+        ret = 0;
+        goto exit;
 
         out_hw_close:
         hid_hw_close(hdev);
