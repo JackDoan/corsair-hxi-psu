@@ -27,8 +27,6 @@
  *      * reading/writing different overcurrent-protection modes
  */
 
-#include <linux/bitops.h>
-#include <linux/completion.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/kernel.h>
@@ -46,10 +44,10 @@ MODULE_AUTHOR("Jack Doan <me@jackdoan.com>");
 #define USB_PRODUCT_ID_CORSAIR_HX1000i    0x1c07
 #define USB_PRODUCT_ID_CORSAIR_HX1200i    0x1c08
 
-#define OUT_BUFFER_SIZE        63
-#define IN_BUFFER_SIZE        16
-#define LABEL_LENGTH        11
-#define REQ_TIMEOUT        300
+#define OUT_BUFFER_SIZE 63
+#define IN_BUFFER_SIZE 16
+#define LABEL_LENGTH 8
+#define REQ_TIMEOUT 300
 #define NUM_RAILS 4
 
 enum hxi_sensor_id {
@@ -83,7 +81,7 @@ struct hxi_device {
         struct completion wait_input_report;
         struct mutex mutex; /* whenever buffer is used, lock before send_usb_cmd */
         u8 *buffer;
-        struct hxi_rail rails[4];
+        struct hxi_rail rails[NUM_RAILS];
 };
 
 /* send command, check for error in response, response in hxi->buffer */
@@ -101,15 +99,17 @@ static int send_usb_cmd(struct hxi_device *hxi, u8 command, u8 b1, u8 b2)
 
         ret = hid_hw_output_report(hxi->hdev, hxi->buffer, OUT_BUFFER_SIZE);
         if (ret < 0) {
-                return ret;
+                goto exit;
+        } else {
+                ret = 0;
         }
-        t = wait_for_completion_timeout(
-                &hxi->wait_input_report, msecs_to_jiffies(REQ_TIMEOUT));
+        t = wait_for_completion_timeout( &hxi->wait_input_report, msecs_to_jiffies(REQ_TIMEOUT));
         if (!t) {
-                return -ETIMEDOUT;
+                ret = -ETIMEDOUT;
         }
 
-        return 0;
+        exit:
+        return ret;
 }
 
 static int hxi_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data, int size)
@@ -118,15 +118,21 @@ static int hxi_raw_event(struct hid_device *hdev, struct hid_report *report, u8 
 
         /* only copy buffer when requested */
         if (completion_done(&hxi->wait_input_report)) {
-                return 0;
+                goto exit;
         }
 
         memcpy(hxi->buffer, data, min(IN_BUFFER_SIZE, size));
         complete(&hxi->wait_input_report);
 
+        exit:
         return 0;
 }
 
+/*
+ * Gets one of the two temperature sensors in the PSU
+ * This code is different enough from the other sensors to justify pulling it out into it's own
+ * function to improve readability.
+ */
 static int get_temperature(struct hxi_device *hxi, int channel)
 {
         int ret;
@@ -134,8 +140,8 @@ static int get_temperature(struct hxi_device *hxi, int channel)
         if (channel == 1) {
                 cmd = SIG_TEMPERATURE_2;
         }
-        mutex_lock(&hxi->mutex);
 
+        mutex_lock(&hxi->mutex);
         ret = send_usb_cmd(hxi, 0x03, cmd, 0);
         if (ret) {
                 ret = -ENODATA;
@@ -143,11 +149,12 @@ static int get_temperature(struct hxi_device *hxi, int channel)
                 ret = (hxi->buffer[2] << 8) + hxi->buffer[3];
         }
         mutex_unlock(&hxi->mutex);
+
         return ret;
 }
 
 /*
- * the PSU reports voltage/current/power measurements in this 16-bit
+ * The PSU reports voltage/current/power measurements in this 16-bit
  * floating-point format as described in the
  * PMBUS spec, v1.2, Part II, section 8.3.1
  *
@@ -181,7 +188,7 @@ static int decode_corsair_float(u16 input)
 }
 
 /*
- * requests and returns single data values depending on channel.
+ * Requests and returns single data values depending on channel.
  * To maintain PMBUS-like behavior, the PSU switches "channels" when taking
  * measurements from the 12V/5V/3.3V busses. Other sensors that have standard
  * PMBUS commands are "unswitched"
@@ -264,18 +271,21 @@ static int hxi_read_string(struct device *dev, enum hwmon_sensor_types type,
 static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int chan, long *val)
 {
         struct hxi_device *hxi = dev_get_drvdata(dev);
-        int ret;
+        int ret = -EOPNOTSUPP;
+        int data;
 
         switch (type) {
         case hwmon_temp:
                 switch (attr) {
                 case hwmon_temp_input:
-                        ret = get_temperature(hxi, chan);
-                        if (ret < 0) {
-                                return ret;
+                        data = get_temperature(hxi, chan);
+                        if (data < 0) {
+                                ret = -ENODATA;
+                                goto exit;
                         }
-                        *val = ret;
-                        return 0;
+                        *val = data;
+                        ret = 0;
+                        break;
                 default:
                         break;
                 }
@@ -283,12 +293,14 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, 
         case hwmon_in:
                 switch (attr) {
                 case hwmon_in_input:
-                        ret = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].volt_cmd);
-                        if (ret < 0) {
-                                return ret;
+                        data = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].volt_cmd);
+                        if (data < 0) {
+                                ret = -ENODATA;
+                                goto exit;
                         }
-                        *val = ret;
-                        return 0;
+                        *val = data;
+                        ret = 0;
+                        break;
                 default:
                         break;
                 }
@@ -296,12 +308,14 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, 
         case hwmon_curr:
                 switch (attr) {
                 case hwmon_curr_input:
-                        ret = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].amp_cmd);
-                        if (ret < 0) {
-                                return ret;
+                        data = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].amp_cmd);
+                        if (data < 0) {
+                                ret = -ENODATA;
+                                goto exit;
                         }
-                        *val = ret;
-                        return 0;
+                        *val = data;
+                        ret = 0;
+                        break;
                 default:
                         break;
                 }
@@ -309,13 +323,15 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, 
         case hwmon_power:
                 switch (attr) {
                 case hwmon_power_input:
-                        ret = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].power_cmd);
-                        if (ret < 0) {
-                                return ret;
+                        data = get_data(hxi, hxi->rails[chan].sensor, hxi->rails[chan].power_cmd);
+                        if (data < 0) {
+                                ret = -ENODATA;
+                                goto exit;
                         }
                         /*power is reported in uW, more scaling needed */
-                        *val = ret * 1000;
-                        return 0;
+                        *val = data * 1000;
+                        ret = 0;
+                        break;
                 default:
                         break;
                 }
@@ -324,7 +340,8 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, 
                 break;
         }
 
-        return -EOPNOTSUPP;
+        exit:
+        return ret;
 }
 
 static int hxi_write(struct device *dev, enum hwmon_sensor_types type,
