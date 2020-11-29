@@ -63,6 +63,8 @@ enum hxi_sensor_cmd {
         SIG_VOLTS = 0x8B,
         SIG_WALL_VOLTS = 0x88,
         SIG_AMPS = 0x8C,
+        SIG_TEMPERATURE_1 = 0x8D,
+        SIG_TEMPERATURE_2 = 0x8E,
         SIG_WATTS = 0x96,
         SIG_TOTAL_WATTS = 0xEE,
 };
@@ -116,8 +118,9 @@ static int hxi_raw_event(struct hid_device *hdev,
         struct hxi_device *hxi = hid_get_drvdata(hdev);
 
         /* only copy buffer when requested */
-        if (completion_done(&hxi->wait_input_report))
+        if (completion_done(&hxi->wait_input_report)) {
                 return 0;
+        }
 
         memcpy(hxi->buffer, data, min(IN_BUFFER_SIZE, size));
         complete(&hxi->wait_input_report);
@@ -128,13 +131,13 @@ static int hxi_raw_event(struct hid_device *hdev,
 static int get_temperature(struct hxi_device *hxi, int channel)
 {
         int ret;
-        const u8 get_temp_cmd = 0x8D;
-        const u8 len = 0x03;
-        u8 cmd = get_temp_cmd + min((u8) channel,
-                                    (u8) 1); //todo: find idiom for handling bad channel ID
+        u8 cmd = SIG_TEMPERATURE_1;
+        if (channel == 1) {
+                cmd = SIG_TEMPERATURE_2;
+        }
         mutex_lock(&hxi->mutex);
 
-        ret = send_usb_cmd(hxi, len, cmd, 0);
+        ret = send_usb_cmd(hxi, 0x03, cmd, 0);
         if (ret) {
                 ret = -ENODATA;
         } else {
@@ -165,7 +168,7 @@ static int decode_corsair_float(u16 input)
         if (fraction > 1023) {
                 fraction = -(2048 - fraction);
         }
-        if (fraction&1) {
+        if (fraction & 1) {
                 fraction++;
         }
         /* scale to milli-units */
@@ -193,7 +196,7 @@ static int get_electric_data(struct hxi_device *hxi, enum hxi_sensor_id sensor,
         case SENSOR_12V:
         case SENSOR_5V:
         case SENSOR_3V:
-                ret = send_usb_cmd(hxi, 0x02, 0x0, sensor);
+                ret = send_usb_cmd(hxi, 0x2, 0x0, sensor);
                 break;
         case UNSWITCHED:
                 ret = 0;
@@ -284,8 +287,8 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
                 switch (attr) {
                 case hwmon_in_input:
                         ret = get_electric_data(hxi,
-                                                hxi->rails[channel].sensor,
-                                                hxi->rails[channel].volt_cmd);
+                                hxi->rails[channel].sensor,
+                                hxi->rails[channel].volt_cmd);
                         if (ret < 0) {
                                 return ret;
                         }
@@ -299,8 +302,8 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
                 switch (attr) {
                 case hwmon_curr_input:
                         ret = get_electric_data(hxi,
-                                                hxi->rails[channel].sensor,
-                                                hxi->rails[channel].amp_cmd);
+                                hxi->rails[channel].sensor,
+                                hxi->rails[channel].amp_cmd);
                         if (ret < 0) {
                                 return ret;
                         }
@@ -314,12 +317,12 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type,
                 switch (attr) {
                 case hwmon_power_input:
                         ret = get_electric_data(hxi,
-                                                hxi->rails[channel].sensor,
-                                                hxi->rails[channel].power_cmd);
+                                hxi->rails[channel].sensor,
+                                hxi->rails[channel].power_cmd);
                         if (ret < 0) {
                                 return ret;
                         }
-                        //power in hwmon is reported in uW, more scaling needed
+                        /*power is reported in uW, more scaling needed */
                         *val = ret * 1000;
                         return 0;
                 default:
@@ -339,8 +342,7 @@ static int hxi_write(struct device *dev, enum hwmon_sensor_types type,
         return -EOPNOTSUPP;
 }
 
-static umode_t hxi_is_visible(const void *data, enum hwmon_sensor_types type,
-                              u32 attr, int channel)
+static umode_t hxi_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr, int channel)
 {
         return 0444;
 }
@@ -355,25 +357,25 @@ static const struct hwmon_ops hxi_hwmon_ops = {
 static const struct hwmon_channel_info *hxi_info[] = {
         HWMON_CHANNEL_INFO(chip, HWMON_C_REGISTER_TZ),
         HWMON_CHANNEL_INFO(temp,
-                           HWMON_T_INPUT,
-                           HWMON_T_INPUT
+                HWMON_T_INPUT,
+                HWMON_T_INPUT
         ),
         HWMON_CHANNEL_INFO(in,
-                           HWMON_I_INPUT|HWMON_I_LABEL,
-                           HWMON_I_INPUT|HWMON_I_LABEL,
-                           HWMON_I_INPUT|HWMON_I_LABEL,
-                           HWMON_I_INPUT|HWMON_I_LABEL
+                HWMON_I_INPUT | HWMON_I_LABEL,
+                HWMON_I_INPUT | HWMON_I_LABEL,
+                HWMON_I_INPUT | HWMON_I_LABEL,
+                HWMON_I_INPUT | HWMON_I_LABEL
         ),
         HWMON_CHANNEL_INFO(curr,
-                           HWMON_C_INPUT|HWMON_C_LABEL,
-                           HWMON_C_INPUT|HWMON_C_LABEL,
-                           HWMON_C_INPUT|HWMON_C_LABEL
+                HWMON_C_INPUT | HWMON_C_LABEL,
+                HWMON_C_INPUT | HWMON_C_LABEL,
+                HWMON_C_INPUT | HWMON_C_LABEL
         ),
         HWMON_CHANNEL_INFO(power,
-                           HWMON_P_INPUT|HWMON_P_LABEL,
-                           HWMON_P_INPUT|HWMON_P_LABEL,
-                           HWMON_P_INPUT|HWMON_P_LABEL,
-                           HWMON_P_INPUT|HWMON_P_LABEL
+                HWMON_P_INPUT | HWMON_P_LABEL,
+                HWMON_P_INPUT | HWMON_P_LABEL,
+                HWMON_P_INPUT | HWMON_P_LABEL,
+                HWMON_P_INPUT | HWMON_P_LABEL
         ),
         NULL
 };
@@ -423,7 +425,6 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
                 goto exit;
         }
 
-
         ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
         if (ret) {
                 goto exit;
@@ -443,8 +444,7 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
         hid_device_io_start(hdev);
 
         hxi->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "hxipsu",
-                                                         hxi, &hxi_chip_info,
-                                                         0);
+                hxi, &hxi_chip_info, 0);
         if (IS_ERR(hxi->hwmon_dev)) {
                 ret = (int) PTR_ERR(hxi->hwmon_dev);
                 goto out_hw_close;
@@ -463,7 +463,6 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 static void hxi_remove(struct hid_device *hdev)
 {
         struct hxi_device *hxi = hid_get_drvdata(hdev);
-
         hwmon_device_unregister(hxi->hwmon_dev);
         hid_hw_close(hdev);
         hid_hw_stop(hdev);
