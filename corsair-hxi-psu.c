@@ -103,7 +103,7 @@ static int send_usb_cmd(struct hxi_device *hxi, u8 command, u8 b1, u8 b2)
         } else {
                 ret = 0;
         }
-        t = wait_for_completion_timeout( &hxi->wait_input_report, msecs_to_jiffies(REQ_TIMEOUT));
+        t = wait_for_completion_timeout(&hxi->wait_input_report, msecs_to_jiffies(REQ_TIMEOUT));
         if (!t) {
                 ret = -ETIMEDOUT;
         }
@@ -345,7 +345,7 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, 
 }
 
 static int hxi_write(struct device *dev, enum hwmon_sensor_types type,
-        u32 attr, int channel, long val)
+                     u32 attr, int channel, long val)
 {
         return -EOPNOTSUPP;
 }
@@ -365,25 +365,25 @@ static const struct hwmon_ops hxi_hwmon_ops = {
 static const struct hwmon_channel_info *hxi_info[] = {
         HWMON_CHANNEL_INFO(chip, HWMON_C_REGISTER_TZ),
         HWMON_CHANNEL_INFO(temp,
-                HWMON_T_INPUT,
-                HWMON_T_INPUT
+                           HWMON_T_INPUT,
+                           HWMON_T_INPUT
         ),
         HWMON_CHANNEL_INFO(in,
-                HWMON_I_INPUT | HWMON_I_LABEL,
-                HWMON_I_INPUT | HWMON_I_LABEL,
-                HWMON_I_INPUT | HWMON_I_LABEL,
-                HWMON_I_INPUT | HWMON_I_LABEL
+                           HWMON_I_INPUT | HWMON_I_LABEL,
+                           HWMON_I_INPUT | HWMON_I_LABEL,
+                           HWMON_I_INPUT | HWMON_I_LABEL,
+                           HWMON_I_INPUT | HWMON_I_LABEL
         ),
         HWMON_CHANNEL_INFO(curr,
-                HWMON_C_INPUT | HWMON_C_LABEL,
-                HWMON_C_INPUT | HWMON_C_LABEL,
-                HWMON_C_INPUT | HWMON_C_LABEL
+                           HWMON_C_INPUT | HWMON_C_LABEL,
+                           HWMON_C_INPUT | HWMON_C_LABEL,
+                           HWMON_C_INPUT | HWMON_C_LABEL
         ),
         HWMON_CHANNEL_INFO(power,
-                HWMON_P_INPUT | HWMON_P_LABEL,
-                HWMON_P_INPUT | HWMON_P_LABEL,
-                HWMON_P_INPUT | HWMON_P_LABEL,
-                HWMON_P_INPUT | HWMON_P_LABEL
+                           HWMON_P_INPUT | HWMON_P_LABEL,
+                           HWMON_P_INPUT | HWMON_P_LABEL,
+                           HWMON_P_INPUT | HWMON_P_LABEL,
+                           HWMON_P_INPUT | HWMON_P_LABEL
         ),
         NULL
 };
@@ -452,7 +452,7 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
         hid_device_io_start(hdev);
 
         hxi->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "hxipsu",
-                hxi, &hxi_chip_info, 0);
+                                                         hxi, &hxi_chip_info, 0);
         if (IS_ERR(hxi->hwmon_dev)) {
                 ret = (int) PTR_ERR(hxi->hwmon_dev);
                 goto out_hw_close;
