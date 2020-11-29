@@ -98,17 +98,15 @@ static int send_usb_cmd(struct hxi_device *hxi, u8 command, u8 b1, u8 b2)
 	reinit_completion(&hxi->wait_input_report);
 
 	ret = hid_hw_output_report(hxi->hdev, hxi->buffer, OUT_BUFFER_SIZE);
-	if (ret < 0) {
+	if (ret < 0)
 		goto exit;
-	} else {
+	else
 		ret = 0;
-	}
 	t = wait_for_completion_timeout(&hxi->wait_input_report, msecs_to_jiffies(REQ_TIMEOUT));
-	if (!t) {
+	if (!t)
 		ret = -ETIMEDOUT;
-	}
 
-	exit:
+exit:
 	return ret;
 }
 
@@ -117,14 +115,13 @@ static int hxi_raw_event(struct hid_device *hdev, struct hid_report *report, u8 
 	struct hxi_device *hxi = hid_get_drvdata(hdev);
 
 	/* only copy buffer when requested */
-	if (completion_done(&hxi->wait_input_report)) {
+	if (completion_done(&hxi->wait_input_report))
 		goto exit;
-	}
 
 	memcpy(hxi->buffer, data, min(IN_BUFFER_SIZE, size));
 	complete(&hxi->wait_input_report);
 
-	exit:
+exit:
 	return 0;
 }
 
@@ -137,17 +134,16 @@ static int get_temperature(struct hxi_device *hxi, int channel)
 {
 	int ret;
 	u8 cmd = SIG_TEMPERATURE_1;
-	if (channel == 1) {
+
+	if (channel == 1)
 		cmd = SIG_TEMPERATURE_2;
-	}
 
 	mutex_lock(&hxi->mutex);
 	ret = send_usb_cmd(hxi, 0x03, cmd, 0);
-	if (ret) {
+	if (ret)
 		ret = -ENODATA;
-	} else {
+	else
 		ret = (hxi->buffer[2] << 8) + hxi->buffer[3];
-	}
 	mutex_unlock(&hxi->mutex);
 
 	return ret;
@@ -168,22 +164,18 @@ static int decode_corsair_float(u16 input)
 	int exponent = input >> 11;
 	int fraction = input & 2047;
 
-	if (exponent > 15) {
+	if (exponent > 15)
 		exponent = -(32 - exponent);
-	}
-	if (fraction > 1023) {
+	if (fraction > 1023)
 		fraction = -(2048 - fraction);
-	}
-	if (fraction & 1) {
+	if (fraction & 1)
 		fraction++;
-	}
 	/* scale to milli-units */
 	fraction = fraction * 1000;
-	if (exponent < 0) {
+	if (exponent < 0)
 		ret = fraction >> ((~exponent) + 1);
-	} else {
+	else
 		ret = fraction << exponent;
-	}
 	return ret;
 }
 
@@ -196,6 +188,7 @@ static int decode_corsair_float(u16 input)
 static int get_data(struct hxi_device *hxi, enum hxi_sensor_id sensor, enum hxi_sensor_cmd sig)
 {
 	int ret;
+
 	mutex_lock(&hxi->mutex);
 	switch (sensor) {
 	case SENSOR_12V:
@@ -210,9 +203,8 @@ static int get_data(struct hxi_device *hxi, enum hxi_sensor_id sensor, enum hxi_
 		ret = -EOPNOTSUPP;
 		break;
 	}
-	if (ret) {
+	if (ret)
 		goto out_unlock;
-	}
 	switch (sig) {
 	case SIG_VOLTS:
 	case SIG_AMPS:
@@ -225,18 +217,17 @@ static int get_data(struct hxi_device *hxi, enum hxi_sensor_id sensor, enum hxi_
 		ret = -1;
 		break;
 	}
-	if (ret) {
+	if (ret)
 		goto out_unlock;
-	}
 	/*
 	 * Note that this is different byte order from temperature.
 	 * Thanks, PMBus.
 	 */
 	ret = (hxi->buffer[3] << 8) + hxi->buffer[2];
 
-	out_unlock:
+out_unlock:
 	mutex_unlock(&hxi->mutex);
-	return decode_corsair_float((u16) ret);
+	return decode_corsair_float((u16)ret);
 }
 
 static int hxi_read_string(struct device *dev, enum hwmon_sensor_types type,
@@ -340,7 +331,7 @@ static int hxi_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, 
 		break;
 	}
 
-	exit:
+exit:
 	return ret;
 }
 
@@ -430,19 +421,16 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	strncpy(hxi->rails[3].label, "Wall", LABEL_LENGTH);
 
 	ret = hid_parse(hdev);
-	if (ret) {
+	if (ret)
 		goto exit;
-	}
 
 	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
-	if (ret) {
+	if (ret)
 		goto exit;
-	}
 
 	ret = hid_hw_open(hdev);
-	if (ret) {
+	if (ret)
 		goto out_hw_stop;
-	}
 
 	hxi->hdev = hdev;
 	hid_set_drvdata(hdev, hxi);
@@ -454,24 +442,25 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	hxi->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "hxipsu",
 							 hxi, &hxi_chip_info, 0);
 	if (IS_ERR(hxi->hwmon_dev)) {
-		ret = (int) PTR_ERR(hxi->hwmon_dev);
+		ret = (int)PTR_ERR(hxi->hwmon_dev);
 		goto out_hw_close;
 	}
 
 	ret = 0;
 	goto exit;
 
-	out_hw_close:
+out_hw_close:
 	hid_hw_close(hdev);
-	out_hw_stop:
+out_hw_stop:
 	hid_hw_stop(hdev);
-	exit:
+exit:
 	return ret;
 }
 
 static void hxi_remove(struct hid_device *hdev)
 {
 	struct hxi_device *hxi = hid_get_drvdata(hdev);
+
 	hwmon_device_unregister(hxi->hwmon_dev);
 	hid_hw_close(hdev);
 	hid_hw_stop(hdev);
