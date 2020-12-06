@@ -65,6 +65,7 @@ enum hxi_sensor_cmd {
 	SIG_TEMPERATURE_2 = 0x8E,
 	SIG_WATTS = 0x96,
 	SIG_TOTAL_WATTS = 0xEE,
+	SIG_POORLY_UNDERSTOOD_INIT = 0xfe,
 };
 
 struct hxi_rail {
@@ -445,6 +446,18 @@ static int hxi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		ret = (int)PTR_ERR(hxi->hwmon_dev);
 		goto out_hw_close;
 	}
+
+	/*
+	 * This needs to be sent at least once per PSU power cycle or other commands won't work.
+	 */
+	mutex_lock(&hxi->mutex);
+	ret = send_usb_cmd(hxi, SIG_POORLY_UNDERSTOOD_INIT, 0x3, 0x0);
+	if (ret)
+		ret = -ENODATA;
+	else
+		ret = (hxi->buffer[2] << 8) + hxi->buffer[3];
+	mutex_unlock(&hxi->mutex);
+
 
 	ret = 0;
 	goto exit;
