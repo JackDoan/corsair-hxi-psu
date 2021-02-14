@@ -1,5 +1,9 @@
 .. SPDX-License-Identifier: GPL-2.0-or-later
 
+IMPORTANT
+==========================
+Another version of this driver has been mainlined. I'm leaving this repo up as a reference for writing simple Linux drivers, but no longer actively developing it.
+
 Kernel driver corsair-hxi-psu
 ==========================
 
